@@ -3,6 +3,7 @@ import * as https from 'https'
 import * as fs from 'fs'
 import { SecureContext, createSecureContext, SecureContextOptions, TLSSocket } from 'tls'
 import { CertificateCreationResult, createCertificate } from 'pem'
+import { callbackify } from 'util';
 
 class HttpServer {
   private server: http.Server
@@ -22,43 +23,76 @@ interface CertInterface {
   getCertForHost(servername: string): Promise<SecureContextOptions>
 }
 
+type CertificatePair = { key: string, crt: string }
+
 class Certificate implements CertInterface {
   async getCertForHost(servername: string): Promise<SecureContextOptions> {
     const cert = await this.generate(servername)
-    return { key: cert.clientKey, cert: cert.certificate }
+    if (fs.existsSync(`${servername}.crt`)) {
+      Promise.reject('cert not exist')
+    } else {
+      await this.store(`${servername}.crt`, cert.crt)
+    }
+    if (fs.existsSync(`${servername}.key`)) {
+      Promise.reject('cert not exist')
+    } else {
+      await this.store(`${servername}.key`, cert.key)
+    }
+    return cert
   }
 
-  private async generate(domain): Promise<CertificateCreationResult> {
-    const root = await this.getRoot()
+  private async store(domain: string, content: string) {
     return new Promise((resolve, reject) => {
-      createCertificate({
-        altNames: [domain],
-        commonName: domain,
-        days: 365,
-        serviceCertificate: root.certificate,
-        serviceKey: root.serviceKey
-      }, (error, keys: CertificateCreationResult) => {
-        if (error) {
-          reject(error)
+      fs.writeFile(`./${domain}`, content, err => {
+        if (err) {
+          reject(err)
         } else {
-          resolve(keys)
+          resolve()
         }
       })
     })
   }
 
-  private async getRoot(): Promise<CertificateCreationResult> {
+  private async generate(domain): Promise<CertificatePair> {
+    const ca = await this.getRootCA()
     return new Promise((resolve, reject) => {
-      createCertificate((error, keys: CertificateCreationResult) => {
-        console.log(keys)
+      createCertificate({
+        altNames: [domain],
+        commonName: domain,
+        days: 365,
+        serviceCertificate: ca.crt,
+        serviceKey: ca.key
+      }, (error, keys: CertificateCreationResult) => {
         if (error) {
           reject(error)
         } else {
-          fs.writeFileSync('./root.key', keys.serviceKey)
-          fs.writeFileSync('./root.cert', keys.certificate)
-          resolve(keys)
+          resolve({ key: keys.serviceKey, crt: keys.certificate })
         }
       })
+    })
+  }
+
+  private async getRootCA(): Promise<CertificatePair> {
+    return new Promise((resolve, reject) => {
+      if (fs.existsSync('./root.key') && fs.existsSync('./root.crt')) {
+        resolve({
+          key: fs.readFileSync('./root.key', { encoding: 'utf8' }).toString(),
+          crt: fs.readFileSync('./root.crt', { encoding: 'utf8' }).toString()
+        })
+      } else {
+        reject('root ca not exists')
+      }
+      // createCertificate({
+      //   commonName: 'Jhasheng CA', emailAddress: 'jhasheng@hotmail.com', organization: 'Jhasheng Purple', organizationUnit: 'Jhasheng Purple CA'
+      // }, (error, keys: CertificateCreationResult) => {
+      //   if (error) {
+      //     reject(error)
+      //   } else {
+      //     fs.writeFileSync('./root.key', keys.serviceKey)
+      //     fs.writeFileSync('./root.crt', keys.certificate)
+      //     resolve(keys)
+      //   }
+      // })
     })
   }
 }
@@ -129,9 +163,13 @@ class ProxyServer {
 }
 
 async function bootstrap() {
-  const proxy = await ProxyServer.create()
-  await proxy.init()
-  await proxy.listen(8999)
+  try {
+    const proxy = await ProxyServer.create()
+    await proxy.init()
+    await proxy.listen(8999)
+  } catch (e) {
+    console.error(e, 'error')
+  }
 }
 
 bootstrap()
