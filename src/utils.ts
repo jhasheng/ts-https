@@ -6,6 +6,7 @@ import { createLogger } from './logger'
 import { CertificateCreationResult, createCertificate } from 'pem'
 import { lruCache, CA, FakeHandler, Email, Expired } from './constans'
 import { createSecureContext, SecureContext } from 'tls';
+import { headerInterceptor } from './interceptor/request';
 
 const logger = createLogger('utils')
 
@@ -20,6 +21,7 @@ export function localRequest(request: http.IncomingMessage, response: http.Serve
 export function localRequest(request: http.IncomingMessage, response: http.ServerResponse, secure?: boolean): void {
   logger.silly('local %s request: %j', secure ? 'https' : 'http', request.headers)
   const { url, headers, method } = request
+  headerInterceptor(headers)
   const { host } = headers
   const { path } = URL.parse(url)
   // 从 host 中分析出域名和端口
@@ -31,12 +33,16 @@ export function localRequest(request: http.IncomingMessage, response: http.Serve
   }
   // https 与 http 请求的模块不同
   const handler: FakeHandler = (+port === 443) ? https.request : http.request
-
+  
   const remote = handler({ host: domain, headers, method, port, path }, incoming => {
     const { statusCode, headers } = incoming
+    response.setHeader('X-WECHAT-TOKEN', 'hahahahah')
     response.writeHead(statusCode, headers)
     incoming.pipe(response)
   })
+
+  remote.on('error', err => logger.error('local request error: %j', err))
+
   request.pipe(remote)
 }
 
