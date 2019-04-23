@@ -4,19 +4,18 @@ import * as URL from 'url'
 import * as net from 'net'
 import { createLogger } from './logger'
 import { CertificateCreationResult, createCertificate } from 'pem'
-import { lruCache, CA, FakeHandler } from './constans'
+import { lruCache, CA, FakeHandler, EMAIL } from './constans'
 
 const logger = createLogger('utils')
 
 /**
  * 本地真实请求
- * 
- * @param request 
- * @param response 
- * @param secure 
+ * @param  {http.IncomingMessage} request
+ * @param  {http.ServerResponse} response
+ * @param  {boolean} secure
  */
 export function localRequest(request: http.IncomingMessage, response: http.ServerResponse, secure: boolean = false) {
-  logger.silly('local %s request: %o', secure ? 'https' : 'http', request.headers)
+  logger.silly('local %s request: %j', secure ? 'https' : 'http', request.headers)
   const { url, headers, method } = request
   const { host } = headers
   const { path } = URL.parse(url)
@@ -27,13 +26,9 @@ export function localRequest(request: http.IncomingMessage, response: http.Serve
   } else if (!port) {
     port = '80'
   }
+  // https 与 http 请求的模块不同
+  const handler: FakeHandler = (+port === 443) ? https.request : http.request
 
-  let handler: FakeHandler
-  if (+port === 443) {
-    handler = https.request
-  } else {
-    handler = http.request
-  }
   const remote = handler({ host: domain, headers, method, port, path }, incoming => {
     const { statusCode, headers } = incoming
     response.writeHead(statusCode, headers)
@@ -43,27 +38,31 @@ export function localRequest(request: http.IncomingMessage, response: http.Serve
 }
 
 /**
- * 收到 connect 请求
- * @param host 
- * @param port 
- * @param socket 
+ * @param  {net.Socket} socket
+ * @param  {number} port
+ * @param  {string} host?
+ * @returns void
  */
-export function forward(host: string, port: number, socket: net.Socket) {
-  logger.verbose('connect forward %s %s', host, port)
+export function forward(socket: net.Socket, port: number, head: Buffer): void
+export function forward(socket: net.Socket, port: number, head: Buffer, host: string): void
+export function forward(socket: net.Socket, port: number, head: Buffer, host?: string): void {
+  logger.verbose('connect forward %s %s', port, host)
   const tmp = net.connect(port, host, () => {
     socket.write('HTTP/1.1 200 Connection Established\r\nProxy-agent: MITM-proxy\r\n\r\n')
+    tmp.write(head)
     tmp.pipe(socket)
     socket.pipe(tmp)
   })
   // tmp.setTimeout(0)
 
   tmp.on('error', err => logger.error('tmp error:', err))
-  socket.on('error', err => logger.error('socket error: %o', err))
+  socket.on('error', err => logger.error('socket error: %j', err))
 }
 
 /**
  * 获取 request 请求内容
- * @param request 
+ * @param  {http.IncomingMessage} request
+ * @returns Promise
  */
 export async function requestBody(request: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -75,7 +74,8 @@ export async function requestBody(request: http.IncomingMessage): Promise<string
 
 /**
  * 自签证书，有缓存则从缓存中获取
- * @param domain 
+ * @param  {string} domain
+ * @returns Promise
  */
 export async function fakeCertificate(domain: string): Promise<CertificateCreationResult> {
   if (lruCache.has(domain)) {
@@ -89,7 +89,7 @@ export async function fakeCertificate(domain: string): Promise<CertificateCreati
       selfSigned: true,
       altNames: [domain],
       commonName: domain,
-      emailAddress: 'jhasheng@hotmail.com',
+      emailAddress: EMAIL,
       serviceKey: CA.key,
       serviceCertificate: CA.cert,
     }, (error: Error, result: CertificateCreationResult) => {

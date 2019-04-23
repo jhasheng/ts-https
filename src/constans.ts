@@ -22,4 +22,6 @@ export const lruFS = new LRU<string, https.Server>({
 
 export const HackTLS = true
 
+export const EMAIL = 'jhasheng@hotmail.com'
+
 export type FakeHandler = (options: http.RequestOptions, callback?: (res: http.IncomingMessage) => void) => http.ClientRequest

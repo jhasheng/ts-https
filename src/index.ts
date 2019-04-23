@@ -21,8 +21,8 @@ proxy.on('connect', (request: http.IncomingMessage, socket: net.Socket, head: Bu
   logger.verbose('connect: %s ', request.url)
   // HackTLS 启用中间人代理
   if (HackTLS) {
-    fakeServer(host, ({ port }) => forward('127.0.0.1', port, socket))
+    fakeServer(host, ({ port }) => forward(socket, port, head))
   } else {
-    forward(host, +port, socket)
+    forward(socket, +port, head, host)
   }
 })
