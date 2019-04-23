@@ -4,7 +4,8 @@ import * as URL from 'url'
 import * as net from 'net'
 import { createLogger } from './logger'
 import { CertificateCreationResult, createCertificate } from 'pem'
-import { lruCache, CA, FakeHandler, EMAIL } from './constans'
+import { lruCache, CA, FakeHandler, Email, Expired } from './constans'
+import { createSecureContext, SecureContext } from 'tls';
 
 const logger = createLogger('utils')
 
@@ -14,7 +15,9 @@ const logger = createLogger('utils')
  * @param  {http.ServerResponse} response
  * @param  {boolean} secure
  */
-export function localRequest(request: http.IncomingMessage, response: http.ServerResponse, secure: boolean = false) {
+export function localRequest(request: http.IncomingMessage, response: http.ServerResponse): void
+export function localRequest(request: http.IncomingMessage, response: http.ServerResponse, secure: boolean): void
+export function localRequest(request: http.IncomingMessage, response: http.ServerResponse, secure?: boolean): void {
   logger.silly('local %s request: %j', secure ? 'https' : 'http', request.headers)
   const { url, headers, method } = request
   const { host } = headers
@@ -62,7 +65,7 @@ export function forward(socket: net.Socket, port: number, head: Buffer, host?: s
 /**
  * 获取 request 请求内容
  * @param  {http.IncomingMessage} request
- * @returns Promise
+ * @returns Promise<string>
  */
 export async function requestBody(request: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -75,21 +78,22 @@ export async function requestBody(request: http.IncomingMessage): Promise<string
 /**
  * 自签证书，有缓存则从缓存中获取
  * @param  {string} domain
- * @returns Promise
+ * @returns Promise<CertificateCreationResult>
  */
 export async function fakeCertificate(domain: string): Promise<CertificateCreationResult> {
   if (lruCache.has(domain)) {
     logger.verbose('fake certificate cache hit: %s', domain)
     return lruCache.get(domain)
+  } else {
+    logger.verbose('fake certificate cache miss: %s', domain)
   }
-  logger.verbose('fake certificate cache miss: %s, need generate', domain)
   return new Promise((resolve, reject) => {
     createCertificate({
-      days: 30,
+      days: Expired,
       selfSigned: true,
       altNames: [domain],
       commonName: domain,
-      emailAddress: EMAIL,
+      emailAddress: Email,
       serviceKey: CA.key,
       serviceCertificate: CA.cert,
     }, (error: Error, result: CertificateCreationResult) => {
@@ -101,4 +105,16 @@ export async function fakeCertificate(domain: string): Promise<CertificateCreati
       }
     })
   })
+}
+
+export async function SNICallback(hostname: string, done: (error: Error, context: SecureContext) => void) {
+  try {
+    const { clientKey, certificate } = await fakeCertificate(hostname)
+    const context = createSecureContext({ key: clientKey, cert: certificate })
+    logger.verbose('SNICallback success: %s', hostname)
+    done(null, context)
+  } catch (e) {
+    logger.error('SNICallback error: %j', e)
+    done(new Error(e), null)
+  }
 }
