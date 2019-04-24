@@ -5,6 +5,8 @@ import { TLSSocket } from 'tls'
 import { createLogger } from './logger'
 import { lruFSC } from './constans'
 import { localRequest, fakeCertificate } from './utils'
+import { EventEmitter } from 'events';
+import { Purple } from '.';
 
 const logger = createLogger('fake-server')
 
@@ -13,7 +15,7 @@ const logger = createLogger('fake-server')
  * @param  {string} host
  * @param  {Function} callback
  */
-export async function fakeServer(host: string, callback: (address: any) => void) {
+export async function fakeServer(host: string, server: Purple, callback: (address: any) => void) {
   if (lruFSC.has(host)) {
     logger.verbose('cache fake server hit')
     callback(lruFSC.get(host).address())
@@ -34,7 +36,7 @@ export async function fakeServer(host: string, callback: (address: any) => void)
     callback(address)
   })
 
-  fake.on('request', (fakeRequest: http.IncomingMessage, fakeResponse: http.ServerResponse) => localRequest(fakeRequest, fakeResponse, true))
+  fake.on('request', (fakeRequest: http.IncomingMessage, fakeResponse: http.ServerResponse) => localRequest(fakeRequest, fakeResponse, server, true))
   fake.on('tlsClientError', (err: Error, socket: TLSSocket) => logger.error('tls client error: %j', err))
   fake.on('error', err => logger.error('fake server error: %j', err))
 

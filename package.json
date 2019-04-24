@@ -13,13 +13,16 @@
     "@types/lru-cache": "^5.1.0",
     "@types/node": "^11.13.4",
     "@types/pem": "^1.9.5",
-    "@types/request": "^2.48.1"
+    "@types/request": "^2.48.1",
+    "@types/uuid": "^3.4.4",
+    "@types/ws": "^6.0.1"
   },
   "dependencies": {
     "lru-cache": "^5.1.1",
     "pem": "^1.14.2",
     "request": "^2.88.0",
     "typescript": "^3.4.3",
+    "uuid": "^3.3.2",
     "winston": "^3.2.1",
     "winston-daily-rotate-file": "^3.8.0",
     "ws": "^6.2.1"

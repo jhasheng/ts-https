@@ -4,9 +4,11 @@ import * as URL from 'url'
 import * as net from 'net'
 import { createLogger } from './logger'
 import { CertificateCreationResult, createCertificate } from 'pem'
-import { lruCache, CA, FakeHandler, Email, Expired } from './constans'
+import { lruCache, CA, FakeHandler, Email, Expired, Middleware } from './constans'
 import { createSecureContext, SecureContext } from 'tls';
-import { headerInterceptor } from './interceptor/request';
+import { headers as requsetHeaderInterceptor } from './interceptor/request'
+import { Purple } from '.'
+import * as uuid from 'uuid/v4'
 
 const logger = createLogger('utils')
 
@@ -16,12 +18,13 @@ const logger = createLogger('utils')
  * @param  {http.ServerResponse} response
  * @param  {boolean} secure
  */
-export function localRequest(request: http.IncomingMessage, response: http.ServerResponse): void
-export function localRequest(request: http.IncomingMessage, response: http.ServerResponse, secure: boolean): void
-export function localRequest(request: http.IncomingMessage, response: http.ServerResponse, secure?: boolean): void {
+export async function localRequest(request: http.IncomingMessage, response: http.ServerResponse, server: Purple): Promise<void>
+export async function localRequest(request: http.IncomingMessage, response: http.ServerResponse, server: Purple, secure: boolean): Promise<void>
+export async function localRequest(request: http.IncomingMessage, response: http.ServerResponse, server: Purple, secure?: boolean): Promise<void> {
   logger.silly('local %s request: %j', secure ? 'https' : 'http', request.headers)
-  const { url, headers, method } = request
-  headerInterceptor(headers)
+  // server.emit('request', request, response)
+  const { url, headers, method, httpVersion } = request
+  requsetHeaderInterceptor(headers)
   const { host } = headers
   const { path } = URL.parse(url)
   // 从 host 中分析出域名和端口
@@ -33,10 +36,18 @@ export function localRequest(request: http.IncomingMessage, response: http.Serve
   }
   // https 与 http 请求的模块不同
   const handler: FakeHandler = (+port === 443) ? https.request : http.request
-  
-  const remote = handler({ host: domain, headers, method, port, path }, incoming => {
-    const { statusCode, headers } = incoming
-    response.setHeader('X-WECHAT-TOKEN', 'hahahahah')
+
+  // const body = await requestBody(request)
+  const options = { host: domain, headers, method: method.trim(), port, path }
+  logger.verbose('request options %j', options)
+
+  const remote = handler(options, incoming => {
+    const { statusCode, headers, socket: { remoteAddress, remotePort } } = incoming
+    logger.info('remote info %j', incoming.socket.remoteAddress)
+    // const body = await requestBody(incoming)
+    server.send(uuid(), options, { headers, code: incoming.statusCode, ssl: secure, ip: remoteAddress, port: remotePort, protocol: httpVersion })
+    // logger.verbose('response body %s', body)
+    // responseHeaderInterceptor(response)
     response.writeHead(statusCode, headers)
     incoming.pipe(response)
   })
@@ -123,4 +134,19 @@ export async function SNICallback(hostname: string, done: (error: Error, context
     logger.error('SNICallback error: %j', e)
     done(new Error(e), null)
   }
+}
+
+export function pipeline() {
+  let handlers: Middleware[] = []
+  const app = (request: http.IncomingMessage, response: http.ServerResponse) => {
+    let i = 0
+    const next = () => {
+      const handler = handlers[i++]
+      handler(request, response, next)
+    }
+    next()
+  }
+
+  app.use = (task: Middleware) => handlers.push(task)
+  return app
 }

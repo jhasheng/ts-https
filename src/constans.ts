@@ -19,3 +19,4 @@ export const Expired = 30
 
 export type CertificatePair = { key: string, cert: string }
 export type FakeHandler = (options: http.RequestOptions, callback?: (res: http.IncomingMessage) => void) => http.ClientRequest
+export type Middleware = (request: http.IncomingMessage, response: http.ServerResponse, next: () => void) => void

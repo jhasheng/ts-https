@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Purple Proxy</title>
+  <link href="https://fonts.cat.net/css?family=Roboto:100,300,400,500,700,900|Material+Icons" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/vuetify/dist/vuetify.min.css" rel="stylesheet">
+  <script src="https://cdn.bootcss.com/vue/2.6.10/vue.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify/dist/vuetify.min.js"></script>
+</head>
+
+<body>
+  <div id="app">
+    <v-container grid-list-xl text-xs-center>
+      <v-layout row wrap>
+        <v-flex xs12>
+          <v-data-table :headers="headers" class="elevation-1" :items="desserts"
+            :rows-per-page-items='[50,100,{"text":"$vuetify.dataIterator.rowsPerPageAll","value":100}]' :expand="false"
+            item-key="uuid" :pagination.sync="pagination">
+            <template v-slot:items="props">
+              <tr @click.stop="drawer = !drawer">
+                <td class="text-xs-left">{{ props.index + 1 }}</td>
+                <td class="text-xs-left">
+                  <v-icon small class="mr-2">{{ props.item.type }}</v-icon>
+                </td>
+                <td class="text-xs-left">{{ props.item.method }}</td>
+                <td class="text-xs-right">{{ props.item.status }}</td>
+                <td class="text-xs-right">{{ props.item.ip }}:{{ props.item.port }}</td>
+                <td class="text-xs-right">HTTP/{{ props.item.protocol }}</td>
+                <td>
+                  <div :title="props.item.domain" class="text-xs-left text-truncate"
+                    style="max-width: 200px; float: left; padding: 10px 0;">
+                    <v-icon v-if="props.item.secure" color="green" small class="mr-2">https</v-icon>
+                    <v-icon v-else color="gray" small class="mr-2">http</v-icon>{{ props.item.domain }}
+                  </div>
+                </td>
+                <td>
+                  <div :title="props.item.path" class="text-xs-left text-truncate"
+                    style="max-width: 200px; padding: 10px 0;">{{ props.item.path }}</div>
+                </td>
+              </tr>
+            </template>
+          </v-data-table>
+        </v-flex>
+        <v-navigation-drawer v-model="drawer" absolute temporary>
+          <v-list class="pa-1">
+            <v-list-tile avatar>
+              <v-list-tile-avatar>
+                <img src="https://randomuser.me/api/portraits/men/85.jpg">
+              </v-list-tile-avatar>
+
+              <v-list-tile-content>
+                <v-list-tile-title>John Leider</v-list-tile-title>
+              </v-list-tile-content>
+            </v-list-tile>
+          </v-list>
+
+          <v-list class="pt-0" dense>
+            <v-divider></v-divider>
+
+            <v-list-tile v-for="item in items" :key="item.title" @click="">
+              <v-list-tile-action>
+                <v-icon>{{ item.icon }}</v-icon>
+              </v-list-tile-action>
+
+              <v-list-tile-content>
+                <v-list-tile-title>{{ item.title }}</v-list-tile-title>
+              </v-list-tile-content>
+            </v-list-tile>
+          </v-list>
+        </v-navigation-drawer>
+      </v-layout>
+    </v-container>
+  </div>
+</body>
+<script>
+  new Vue({
+    el: '#app',
+    data() {
+      return {
+        drawer: null,
+        items: [],
+        pagination: {
+          descending: true,
+          rowsPerPage: 100
+        },
+        headers: [
+          { text: '#', sortable: false, align: 'left', width: '50' },
+          { text: 'TYPE', sortable: false, value: 'type', align: 'left', width: '50' },
+          { text: 'METHOD', sortable: false, value: 'method', align: 'left', width: '100' },
+          { text: 'STATUS', sortable: false, value: 'status', align: 'right', width: '80' },
+          { text: 'REMOTE ADDRESS', sortable: false, value: 'remote', align: 'right', width: '120' },
+          { text: 'PROTOCOL', sortable: false, value: 'protocol', align: 'right', width: '50' },
+          { text: 'DOMAIN', sortable: false, value: 'domain', align: 'left' },
+          { text: 'URL', sortable: false, value: 'path', align: 'left' },
+        ],
+        desserts: [
+          // {
+          //   method: 'POST', uuid: '123123', domain: 'https://www'
+          // }
+        ]
+      }
+    },
+    methods: {
+      mime(ct) {
+        if (!ct) {
+          return 'help'
+        }
+        let real = ct.toLowerCase().replace(/\s/g, '').replace(/[;]?charset=(gbk|gb2312|utf-8)[;]?/g, '')
+        let [type, suffix] = real.split('/')
+
+        if (type === 'image') {
+          return type
+        } else {
+          if (suffix.indexOf('javascript') > -1) {
+            return 'code'
+          } else if (suffix.indexOf('html') > -1) {
+            return 'web'
+          } else if (suffix.indexOf('plain') > -1) {
+            return 'file_copy'
+          } else if (suffix.indexOf('css') > -1) {
+            return 'subject'
+          } else {
+            return 'help'
+          }
+        }
+      }
+    },
+    created() {
+      const host = 'ws://127.0.0.1:9000'
+      const client = new WebSocket(host)
+      client.onopen = e => {
+        console.log(e)
+        client.onmessage = ({ data }) => {
+          const info = JSON.parse(data)
+          console.log(info)
+          this.desserts.unshift({
+            method: info.method.replace(/\s/g, ''), path: info.path, domain: info.host,
+            type: this.mime(info.response.headers['content-type']),
+            status: info.response.code, secure: info.response.ssl,
+            ip: info.response.ip, port: info.response.port,
+            protocol: info.response.protocol, uuid: info.uuid
+          })
+        }
+      }
+
+      client.onerror = e => {
+        console.log('error', e)
+      }
+
+      client.close = () => {
+
+      }
+    },
+  })
+
+
+
+
+
+
+</script>
+
+</html>
