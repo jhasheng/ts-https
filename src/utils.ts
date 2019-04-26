@@ -2,6 +2,7 @@ import * as http from 'http'
 import * as https from 'https'
 import * as URL from 'url'
 import * as net from 'net'
+import * as os from 'os'
 import { createLogger } from './logger'
 import { CertificateCreationResult, createCertificate } from 'pem'
 import { lruCache, CA, FakeHandler, Email, Expired, Middleware } from './constans'
@@ -149,4 +150,21 @@ export function pipeline() {
 
   app.use = (task: Middleware) => handlers.push(task)
   return app
+}
+
+export function isLocalIP(ip: string): boolean {
+  const interfaces = os.networkInterfaces()
+  let pass: boolean = false
+  for (let name in interfaces) {
+    for (let inter of interfaces[name]) {
+      if (inter.address === ip) {
+        pass = true
+        break;
+      }
+    }
+  }
+  if (!pass) {
+    return ip === 'localhost'
+  }
+  return pass;
 }

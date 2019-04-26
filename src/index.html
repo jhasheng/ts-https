@@ -6,35 +6,58 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <title>Purple Proxy</title>
-  <link href="https://fonts.cat.net/css?family=Roboto:100,300,400,500,700,900|Material+Icons" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,500,700,900|Material+Icons" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/vuetify/dist/vuetify.min.css" rel="stylesheet">
   <script src="https://cdn.bootcss.com/vue/2.6.10/vue.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/vuetify/dist/vuetify.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/vue-json-tree@0.3.3/dist/json-tree.css">
+  <script src="https://cdn.jsdelivr.net/npm/vue-json-tree@0.3.3/dist/json-tree.js"></script>
+  <!-- <script src="https://cdn.jsdelivr.net/npm/vue-json-component@0.2.1/dist/index.min.js"></script> -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/vue-json-component@0.2.1/dist/index.min.js"></script> -->
+  <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/vue-json-viewer@2.1.4/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/vue-json-viewer@2.1.4/vue-json-viewer.min.js"></script> -->
 </head>
 
 <body>
   <div id="app">
-    <v-container grid-list-xl text-xs-center>
+    <v-toolbar dark color="purple">
+      <v-toolbar-side-icon></v-toolbar-side-icon>
+      <v-toolbar-title class="white--text">Title</v-toolbar-title>
+      <v-spacer></v-spacer>
+      <v-btn icon>
+        <v-icon>search</v-icon>
+      </v-btn>
+      <v-btn icon>
+        <v-icon>apps</v-icon>
+      </v-btn>
+      <v-btn icon>
+        <v-icon>refresh</v-icon>
+      </v-btn>
+      <v-btn icon>
+        <v-icon>more_vert</v-icon>
+      </v-btn>
+    </v-toolbar>
+    <v-container grid-list-xl fluid text-xs-center>
       <v-layout row wrap>
         <v-flex xs12>
           <v-data-table :headers="headers" class="elevation-1" :items="desserts"
             :rows-per-page-items='[50,100,{"text":"$vuetify.dataIterator.rowsPerPageAll","value":100}]' :expand="false"
             item-key="uuid" :pagination.sync="pagination">
             <template v-slot:items="props">
-              <tr @click.stop="drawer = !drawer">
+              <tr @click.stop="view(props.item)">
                 <td class="text-xs-left">{{ props.index + 1 }}</td>
                 <td class="text-xs-left">
-                  <v-icon small class="mr-2">{{ props.item.type }}</v-icon>
+                  <v-icon small class="mr-2">{{ mime(props.item.response.headers['content-type']) }}</v-icon>
                 </td>
                 <td class="text-xs-left">{{ props.item.method }}</td>
-                <td class="text-xs-right">{{ props.item.status }}</td>
-                <td class="text-xs-right">{{ props.item.ip }}:{{ props.item.port }}</td>
-                <td class="text-xs-right">HTTP/{{ props.item.protocol }}</td>
+                <td class="text-xs-right">{{ props.item.response.code }}</td>
+                <td class="text-xs-right">{{ props.item.response.ip }}:{{ props.item.response.port }}</td>
+                <td class="text-xs-right">HTTP/{{ props.item.response.protocol }}</td>
                 <td>
                   <div :title="props.item.domain" class="text-xs-left text-truncate"
                     style="max-width: 200px; float: left; padding: 10px 0;">
-                    <v-icon v-if="props.item.secure" color="green" small class="mr-2">https</v-icon>
-                    <v-icon v-else color="gray" small class="mr-2">http</v-icon>{{ props.item.domain }}
+                    <v-icon v-if="props.item.response.ssl" color="green" small class="mr-2">https</v-icon>
+                    <v-icon v-else color="gray" small class="mr-2">http</v-icon>{{ props.item.host }}
                   </div>
                 </td>
                 <td>
@@ -45,32 +68,65 @@
             </template>
           </v-data-table>
         </v-flex>
-        <v-navigation-drawer v-model="drawer" absolute temporary>
-          <v-list class="pa-1">
-            <v-list-tile avatar>
-              <v-list-tile-avatar>
-                <img src="https://randomuser.me/api/portraits/men/85.jpg">
-              </v-list-tile-avatar>
-
-              <v-list-tile-content>
-                <v-list-tile-title>John Leider</v-list-tile-title>
-              </v-list-tile-content>
-            </v-list-tile>
-          </v-list>
-
-          <v-list class="pt-0" dense>
-            <v-divider></v-divider>
-
-            <v-list-tile v-for="item in items" :key="item.title" @click="">
-              <v-list-tile-action>
-                <v-icon>{{ item.icon }}</v-icon>
-              </v-list-tile-action>
-
-              <v-list-tile-content>
-                <v-list-tile-title>{{ item.title }}</v-list-tile-title>
-              </v-list-tile-content>
-            </v-list-tile>
-          </v-list>
+        <v-navigation-drawer app right width="700" v-model="drawer.state" absolute temporary>
+          <v-tabs height="64" v-model="active" color="purple" dark slider-color="#eee">
+            <v-tab v-for="(header, n) in drawer.headers" :key="n" ripple>{{ header }}</v-tab>
+            <v-tab-item :key="'HEADERS'">
+              <v-card flat>
+                <v-list dense>
+                  <v-subheader>Request</v-subheader>
+                  <v-divider></v-divider>
+                  <v-list-tile v-for="(v, k) in current.headers" :key="k">
+                    <v-layout row>
+                      <v-flex xs3>
+                        <v-list-tile-content class="align-end font-weight-bold
+                        ">{{ k }} :</v-list-tile-content>
+                      </v-flex>
+                      <v-flex xs9>
+                        <v-list-tile-content class="align-start">{{ v }}</v-list-tile-content>
+                      </v-flex>
+                    </v-layout>
+                  </v-list-tile>
+                  <v-divider></v-divider>
+                  <v-subheader>Response</v-subheader>
+                  <v-divider></v-divider>
+                  <v-list-tile v-if="current.response" v-for="(v, k) in current.response.headers" :key="k">
+                    <v-layout row>
+                      <v-flex xs3>
+                        <v-list-tile-content class="align-end font-weight-bold
+                          ">{{ k }} :</v-list-tile-content>
+                      </v-flex>
+                      <v-flex xs9>
+                        <v-list-tile-content class="align-start">{{ v }}</v-list-tile-content>
+                      </v-flex>
+                    </v-layout>
+                  </v-list-tile>
+                </v-list>
+              </v-card>
+            </v-tab-item>
+            <v-tab-item :key="'PREVIEW'">
+              <v-card flat>
+                <json-tree :raw="JSON.stringify(headers)"></json-tree>
+              </v-card>
+            </v-tab-item>
+            <v-tab-item :key="'RESPONSE'">
+              <v-card flat>
+                <v-list dense>
+                  <v-list-tile v-for="(v, k) in current.headers" :key="k">
+                    <v-layout row>
+                      <v-flex xs4>
+                        <v-list-tile-content class="align-end font-weight-bold
+                            ">{{ k }} :</v-list-tile-content>
+                      </v-flex>
+                      <v-flex xs8>
+                        <v-list-tile-content class="align-start">{{ v }}</v-list-tile-content>
+                      </v-flex>
+                    </v-layout>
+                  </v-list-tile>
+                </v-list>
+              </v-card>
+            </v-tab-item>
+          </v-tabs>
         </v-navigation-drawer>
       </v-layout>
     </v-container>
@@ -81,19 +137,27 @@
     el: '#app',
     data() {
       return {
-        drawer: null,
         items: [],
+        active: false,
+        drawer: {
+          state: false,
+          headers: ['HEADERS', 'PREVIEW', 'RESPONSE']
+        },
+        current: {
+          response: {}
+        },
+        text: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.',
         pagination: {
           descending: true,
           rowsPerPage: 100
         },
         headers: [
-          { text: '#', sortable: false, align: 'left', width: '50' },
-          { text: 'TYPE', sortable: false, value: 'type', align: 'left', width: '50' },
-          { text: 'METHOD', sortable: false, value: 'method', align: 'left', width: '100' },
-          { text: 'STATUS', sortable: false, value: 'status', align: 'right', width: '80' },
-          { text: 'REMOTE ADDRESS', sortable: false, value: 'remote', align: 'right', width: '120' },
-          { text: 'PROTOCOL', sortable: false, value: 'protocol', align: 'right', width: '50' },
+          { text: '#', sortable: false, align: 'left', width: '50px' },
+          { text: 'TYPE', sortable: false, value: 'type', align: 'left', width: '50px' },
+          { text: 'METHOD', sortable: false, value: 'method', align: 'left', width: '100px' },
+          { text: 'STATUS', sortable: false, value: 'status', align: 'right', width: '80px' },
+          { text: 'REMOTE ADDRESS', sortable: false, value: 'remote', align: 'right', width: '120px' },
+          { text: 'PROTOCOL', sortable: false, value: 'protocol', align: 'right', width: '50px' },
           { text: 'DOMAIN', sortable: false, value: 'domain', align: 'left' },
           { text: 'URL', sortable: false, value: 'path', align: 'left' },
         ],
@@ -105,6 +169,11 @@
       }
     },
     methods: {
+      view(props) {
+        this.drawer.state = !this.drawer.state
+        console.log(props)
+        this.current = props
+      },
       mime(ct) {
         if (!ct) {
           return 'help'
@@ -133,17 +202,17 @@
       const host = 'ws://127.0.0.1:9000'
       const client = new WebSocket(host)
       client.onopen = e => {
-        console.log(e)
         client.onmessage = ({ data }) => {
           const info = JSON.parse(data)
           console.log(info)
-          this.desserts.unshift({
-            method: info.method.replace(/\s/g, ''), path: info.path, domain: info.host,
-            type: this.mime(info.response.headers['content-type']),
-            status: info.response.code, secure: info.response.ssl,
-            ip: info.response.ip, port: info.response.port,
-            protocol: info.response.protocol, uuid: info.uuid
-          })
+          this.desserts.unshift(info)
+          // this.desserts.unshift({
+          //   method: info.method, path: info.path, domain: info.host,
+          //   type: this.mime(info.response.headers['content-type']),
+          //   status: info.response.code, secure: info.response.ssl,
+          //   ip: info.response.ip, port: info.response.port,
+          //   protocol: info.response.protocol, uuid: info.uuid
+          // })
         }
       }
 
@@ -154,14 +223,9 @@
       client.close = () => {
 
       }
+      this.desserts.unshift(JSON.parse('{"host":"s1.bdstatic.com","headers":{"host":"s1.bdstatic.com","user-agent":"IE8","accept":"*/*","accept-language":"zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2","accept-encoding":"gzip, deflate","referer":"http://www.baidu.com/","connection":"keep-alive","if-modified-since":"Wed, 27 Mar 2019 04:02:28 GMT","if-none-match":"8e9c-5850b818a1d00","cache-control":"max-age=0"},"method":"GET","port":"80","path":"/r/www/cache/static/amd_modules/@baidu/search-sug/sug/index_e0150f3.js","response":{"headers":{"server":"JSP3/2.0.14","date":"Fri, 26 Apr 2019 18:18:48 GMT","content-type":"application/javascript","content-length":"0","connection":"keep-alive","etag":"8e9c-5850b818a1d00","last-modified":"Wed, 27 Mar 2019 04:02:28 GMT","expires":"Sat, 24 Mar 2029 06:02:51 GMT","age":"2636157","accept-ranges":"bytes","cache-control":"max-age=315360000","content-encoding":"gzip","vary":"Accept-Encoding,User-Agent","ohc-response-time":"1 0 0 0 0 0"},"code":304,"ip":"43.224.186.40","port":80,"protocol":"1.1"},"uuid":"41f8c967-805c-41e2-81ef-66087049d3eb"}'))
     },
   })
-
-
-
-
-
-
 </script>
 
 </html>

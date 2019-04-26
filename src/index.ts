@@ -1,20 +1,23 @@
-import * as http from 'http'
 import * as net from 'net'
+import * as http from 'http'
+import * as fs from 'fs'
 import * as WebSocket from 'ws'
+import * as path from 'path'
 import { createLogger } from './logger'
 import { HackTLS } from './constans'
-import { localRequest, forward } from './utils'
+import { localRequest, forward, isLocalIP } from './utils'
 import { fakeServer } from './fake-server'
 import { EventEmitter } from 'events'
 
 const logger = createLogger('demo')
-
+const root = path.resolve('.')
 export class Purple extends EventEmitter {
 
+  // 代理服务器
   private server: http.Server
-
+  // 监控服务器
   private monitor: WebSocket.Server
-
+  // 监控端
   private client: WebSocket
 
   constructor(private port: number = 9000) {
@@ -39,7 +42,7 @@ export class Purple extends EventEmitter {
     })
 
     this.monitor.on('error', err => {
-      console.log('monitor error:', err)
+      logger.error('monitor error: %j', err)
     })
 
     this.server.listen(this.port, () => logger.verbose(`proxy server start at ${this.port}`))
@@ -50,7 +53,16 @@ export class Purple extends EventEmitter {
 
     // http 请求代理
     this.server.on('request', (request: http.IncomingMessage, response: http.ServerResponse) => {
-      localRequest(request, response, this)
+      let [host, port] = request.headers.host.split(':')
+      if (+port === this.port && isLocalIP(host)) {
+        logger.info('local request %s', path.join(root, 'src/index.html'))
+        const rs = fs.createReadStream(path.join(root, 'src/index.html'))
+        rs.pipe(response)
+        response.writeHead(200, { 'Content-Type': 'text/html' })
+        rs.on('close', () => response.end())
+      } else {
+        localRequest(request, response, this)
+      }
     })
 
     // https 代理，https 代理前会前发送 connect 请求
