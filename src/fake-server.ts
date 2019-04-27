@@ -1,47 +1,96 @@
 import * as http from 'http'
 import * as https from 'https'
 import * as net from 'net'
+import * as URL from 'url'
+import * as uuid from 'uuid/v4'
 import { TLSSocket } from 'tls'
 import { createLogger } from './logger'
-import { lruFSC } from './constans'
-import { localRequest, fakeCertificate } from './utils'
-import { EventEmitter } from 'events';
-import { Purple } from '.';
+import { lruFSC, FakeHandler, Monitor, RequestBase } from './constans'
+import { fakeCertificate } from './utils'
+import { EventEmitter } from 'events'
 
 const logger = createLogger('fake-server')
 
-/**
- * https mitm 创建一个临时的 https 连接，使用自己签发的证书
- * @param  {string} host
- * @param  {Function} callback
- */
-export async function fakeServer(host: string, server: Purple, callback: (address: any) => void) {
-  if (lruFSC.has(host)) {
-    logger.verbose('cache fake server hit')
-    callback(lruFSC.get(host).address())
-    return
-  } else {
-    logger.verbose('cache fake server miss')
+export abstract class FakeServer extends EventEmitter {
+
+  constructor() {
+    super()
   }
-  const { clientKey, certificate } = await fakeCertificate(host)
-  const fake = https.createServer({ key: clientKey, cert: certificate })
 
-  lruFSC.set(host, fake)
+  abstract send(data: Monitor): void
 
-  let address: net.AddressInfo | string
+  /**
+   * 本地真实请求
+   * @param  {http.IncomingMessage} request
+   * @param  {http.ServerResponse} response
+   * @param  {boolean} secure
+   */
+  localRequest(request: http.IncomingMessage, response: http.ServerResponse, secure?: boolean) {
+    logger.silly('local %s request: %j', secure ? 'https' : 'http', request.headers)
+    // server.emit('request', request, response)
+    const { url, headers, method, httpVersion } = request
+    const { host } = headers
+    const { path } = URL.parse(url)
+    // 从 host 中分析出域名和端口
+    let [domain, port] = host.split(':')
+    if (secure) {
+      port = '443'
+    } else if (!port) {
+      port = '80'
+    }
+    // https 与 http 请求的模块不同
+    const handler: FakeHandler = (+port === 443) ? https.request : http.request
+    // const body = await requestBody(request)
+    const options = { host: domain, headers, method: method.trim(), port, path }
 
-  fake.listen(0, '127.0.0.1', () => address = fake.address())
-  fake.on('listening', () => {
-    logger.verbose('fake listen success: %j', address)
-    callback(address)
-  })
+    const remote = handler(options, incoming => {
+      const { statusCode, headers, socket: { remoteAddress, remotePort } } = incoming
+      logger.info('remote address %s:%s', remoteAddress, remotePort)
+      // const body = await requestBody(incoming)
+      const base: RequestBase = { code: incoming.statusCode, ssl: secure, ip: remoteAddress, port: remotePort, protocol: httpVersion }
+      this.send({ uuid: uuid(), base, request, response })
+      // logger.verbose('response body %s', body)
+      response.writeHead(statusCode, headers)
+      incoming.pipe(response)
+    })
 
-  fake.on('request', (fakeRequest: http.IncomingMessage, fakeResponse: http.ServerResponse) => localRequest(fakeRequest, fakeResponse, server, true))
-  fake.on('tlsClientError', (err: Error, socket: TLSSocket) => logger.error('tls client error: %j', err))
-  fake.on('error', err => logger.error('fake server error: %j', err))
+    remote.on('error', err => logger.error('local request error: %j', err))
+    request.pipe(remote)
+  }
 
-  fake.on('close', () => {
-    logger.error('fake server closed ... ')
-    lruFSC.del(host)
-  })
+  /**
+   * https mitm 创建一个临时的 https 连接，使用自己签发的证书
+   * @param  {string} host
+   */
+  async createFakeServer(host: string): Promise<net.AddressInfo> {
+    return new Promise(async (resolve, reject) => {
+      if (lruFSC.has(host)) {
+        logger.verbose('cache fake server hit')
+        resolve(lruFSC.get(host).address() as net.AddressInfo)
+      } else {
+        logger.verbose('cache fake server missing')
+      }
+      const { clientKey, certificate } = await fakeCertificate(host)
+      const fake = https.createServer({ key: clientKey, cert: certificate })
+
+      lruFSC.set(host, fake)
+      fake.listen(0, '127.0.0.1')
+
+      fake.on('request', (fakeRequest: http.IncomingMessage, fakeResponse: http.ServerResponse) => {
+        this.localRequest(fakeRequest, fakeResponse, true)
+      })
+      fake.on('tlsClientError', (err: Error, socket: TLSSocket) => logger.error('tls client error: %j', err))
+      fake.on('error', err => logger.error('fake server error: %j', err))
+
+      fake.on('close', () => {
+        logger.error('fake server closed ... ')
+        lruFSC.del(host)
+      })
+
+      fake.on('listening', () => {
+        logger.verbose('fake server start: %j', fake.address())
+        resolve(fake.address() as net.AddressInfo)
+      })
+    })
+  }
 }

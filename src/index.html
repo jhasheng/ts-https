@@ -12,15 +12,11 @@
   <script src="https://cdn.jsdelivr.net/npm/vuetify/dist/vuetify.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/vue-json-tree@0.3.3/dist/json-tree.css">
   <script src="https://cdn.jsdelivr.net/npm/vue-json-tree@0.3.3/dist/json-tree.js"></script>
-  <!-- <script src="https://cdn.jsdelivr.net/npm/vue-json-component@0.2.1/dist/index.min.js"></script> -->
-  <!-- <script src="https://cdn.jsdelivr.net/npm/vue-json-component@0.2.1/dist/index.min.js"></script> -->
-  <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/vue-json-viewer@2.1.4/style.css">
-  <script src="https://cdn.jsdelivr.net/npm/vue-json-viewer@2.1.4/vue-json-viewer.min.js"></script> -->
 </head>
 
 <body>
   <div id="app">
-    <v-toolbar dark color="purple">
+    <v-toolbar color="purple" dark fixed>
       <v-toolbar-side-icon></v-toolbar-side-icon>
       <v-toolbar-title class="white--text">Title</v-toolbar-title>
       <v-spacer></v-spacer>
@@ -39,7 +35,7 @@
     </v-toolbar>
     <v-container grid-list-xl fluid text-xs-center>
       <v-layout row wrap>
-        <v-flex xs12>
+        <v-flex xs12 mt-5>
           <v-data-table :headers="headers" class="elevation-1" :items="desserts"
             :rows-per-page-items='[50,100,{"text":"$vuetify.dataIterator.rowsPerPageAll","value":100}]' :expand="false"
             item-key="uuid" :pagination.sync="pagination">
@@ -68,7 +64,7 @@
             </template>
           </v-data-table>
         </v-flex>
-        <v-navigation-drawer app right width="700" v-model="drawer.state" absolute temporary>
+        <v-navigation-drawer fixed app right width="700" v-model="drawer.state" absolute temporary>
           <v-tabs height="64" v-model="active" color="purple" dark slider-color="#eee">
             <v-tab v-for="(header, n) in drawer.headers" :key="n" ripple>{{ header }}</v-tab>
             <v-tab-item :key="'HEADERS'">
@@ -79,11 +75,10 @@
                   <v-list-tile v-for="(v, k) in current.headers" :key="k">
                     <v-layout row>
                       <v-flex xs3>
-                        <v-list-tile-content class="align-end font-weight-bold
-                        ">{{ k }} :</v-list-tile-content>
+                        <v-list-tile-content v-text="k" class="align-end font-weight-bold" />
                       </v-flex>
                       <v-flex xs9>
-                        <v-list-tile-content class="align-start">{{ v }}</v-list-tile-content>
+                        <v-list-tile-content v-text="v" class="align-start" />
                       </v-flex>
                     </v-layout>
                   </v-list-tile>
@@ -93,11 +88,10 @@
                   <v-list-tile v-if="current.response" v-for="(v, k) in current.response.headers" :key="k">
                     <v-layout row>
                       <v-flex xs3>
-                        <v-list-tile-content class="align-end font-weight-bold
-                          ">{{ k }} :</v-list-tile-content>
+                        <v-list-tile-content v-text="k" class="align-end font-weight-bold" />
                       </v-flex>
                       <v-flex xs9>
-                        <v-list-tile-content class="align-start">{{ v }}</v-list-tile-content>
+                        <v-list-tile-content v-text="v" class="align-start" />
                       </v-flex>
                     </v-layout>
                   </v-list-tile>
@@ -114,12 +108,11 @@
                 <v-list dense>
                   <v-list-tile v-for="(v, k) in current.headers" :key="k">
                     <v-layout row>
-                      <v-flex xs4>
-                        <v-list-tile-content class="align-end font-weight-bold
-                            ">{{ k }} :</v-list-tile-content>
+                      <v-flex xs3>
+                        <v-list-tile-content v-text="k" class="align-end font-weight-bold" />
                       </v-flex>
-                      <v-flex xs8>
-                        <v-list-tile-content class="align-start">{{ v }}</v-list-tile-content>
+                      <v-flex xs9>
+                        <v-list-tile-content v-text="v" class="align-start" />
                       </v-flex>
                     </v-layout>
                   </v-list-tile>

@@ -1,17 +1,13 @@
 import * as net from 'net'
 import * as http from 'http'
-import * as fs from 'fs'
 import * as WebSocket from 'ws'
-import * as path from 'path'
 import { createLogger } from './logger'
-import { HackTLS } from './constans'
-import { localRequest, forward, isLocalIP } from './utils'
-import { fakeServer } from './fake-server'
-import { EventEmitter } from 'events'
+import { HackTLS, Monitor } from './constans'
+import { FakeServer } from './fake-server'
+import { isLocalIP, readResource } from './utils';
 
-const logger = createLogger('demo')
-const root = path.resolve('.')
-export class Purple extends EventEmitter {
+const logger = createLogger('index')
+export default class mitm extends FakeServer {
 
   // 代理服务器
   private server: http.Server
@@ -20,23 +16,27 @@ export class Purple extends EventEmitter {
   // 监控端
   private client: WebSocket
 
-  constructor(private port: number = 9000) {
+  private constructor(private port: number = 9000) {
     super()
   }
 
-  send(uuid: string, data: any, response: any) {
-    if (this.client && this.client.OPEN === WebSocket.OPEN) {
-      data.response = response
-      data.uuid = uuid
-      this.client.send(JSON.stringify(data))
-    }
+  send(data: Monitor) {
+    // if (this.client && this.client.OPEN === WebSocket.OPEN) {
+    //   data.response = response
+    //   data.uuid = uuid
+    //   this.client.send(JSON.stringify(data))
+    // }
+  }
+
+  static createServer() {
+    new mitm().start()
   }
 
   start() {
-    this.server = http.createServer()
+    const server = http.createServer()
+    this.server = server
 
-    this.monitor = new WebSocket.Server({ server: this.server })
-
+    this.monitor = new WebSocket.Server({ server })
     this.monitor.on('connection', (client: WebSocket, request: http.IncomingMessage) => {
       this.client = client
     })
@@ -45,35 +45,35 @@ export class Purple extends EventEmitter {
       logger.error('monitor error: %j', err)
     })
 
-    this.server.listen(this.port, () => logger.verbose(`proxy server start at ${this.port}`))
+    server.listen(this.port)
     // 错误
-    this.server.on('error', (err: Error) => {
+    server.on('error', (err: Error) => {
       logger.error(`proxy error: ${err}`)
     })
 
+    server.on('listening', () => logger.verbose('proxy server start at: %j', server.address()))
+
     // http 请求代理
-    this.server.on('request', (request: http.IncomingMessage, response: http.ServerResponse) => {
+    server.on('request', (request: http.IncomingMessage, response: http.ServerResponse) => {
       let [host, port] = request.headers.host.split(':')
       if (+port === this.port && isLocalIP(host)) {
-        logger.info('local request %s', path.join(root, 'src/index.html'))
-        const rs = fs.createReadStream(path.join(root, 'src/index.html'))
-        rs.pipe(response)
+        logger.info('local request')
         response.writeHead(200, { 'Content-Type': 'text/html' })
-        rs.on('close', () => response.end())
+        readResource('src/index.html').pipe(response).on('close', () => response.end())
       } else {
-        localRequest(request, response, this)
+        this.localRequest(request, response, false)
       }
     })
 
     // https 代理，https 代理前会前发送 connect 请求
-    this.server.on('connect', (request: http.IncomingMessage, socket: net.Socket, head: Buffer) => {
+    server.on('connect', (request: http.IncomingMessage, socket: net.Socket, head: Buffer) => {
       const [host, port] = request.url.split(':')
       logger.verbose('connect: %s ', request.url)
       // HackTLS 启用中间人代理
       if (HackTLS) {
-        fakeServer(host, this, ({ port }) => forward(socket, port, head))
+        this.createFakeServer(host).then(({ port }) => this.forward(socket, port, head))
       } else {
-        forward(socket, +port, head, host)
+        this.forward(socket, +port, head, host)
       }
     })
 
@@ -82,8 +82,20 @@ export class Purple extends EventEmitter {
     //   this.monitor.handleUpgrade(request, socket, head, client => this.monitor.emit('connection', client, request))
     // })
   }
+
+  private forward(socket: net.Socket, port: number, head: Buffer, host?: string): void {
+    logger.verbose('connect forward %s %s', port, host)
+    const tmp = net.connect(port, host, () => {
+      socket.write('HTTP/1.1 200 Connection Established\r\nProxy-agent: MITM-proxy\r\n\r\n')
+      tmp.write(head)
+      tmp.pipe(socket)
+      socket.pipe(tmp)
+    })
+    // tmp.setTimeout(0)
+  
+    tmp.on('error', err => logger.error('tmp error:', err))
+    socket.on('error', err => logger.error('socket error: %j', err))
+  }
 }
 
-const purple = new Purple
-
-purple.start()
+mitm.createServer()
