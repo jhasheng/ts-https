@@ -13,7 +13,7 @@ export const CA: CertificatePair = {
 export const lruCache = new LRU<string, CertificateCreationResult>({ max: 100, maxAge: 60 * 60 * 1000 })
 export const lruFSC = new LRU<string, https.Server>({ max: 100, maxAge: 2 * 60 * 1000 })
 
-export const HackTLS = true
+export const HackTLS = false
 export const Email = 'jhasheng@hotmail.com'
 export const Expired = 30
 

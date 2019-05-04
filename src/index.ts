@@ -5,6 +5,8 @@ import { createLogger } from './logger'
 import { HackTLS, Monitor } from './constans'
 import { FakeServer } from './fake-server'
 import { isLocalIP, readResource } from './utils'
+import { ContentType, ProtocolVersion, HandshakeType } from './handshake/constans'
+import { detect as detectClientHello } from './handshake/client-hello'
 
 const logger = createLogger('index')
 
@@ -54,16 +56,38 @@ export default class MITM extends FakeServer {
   }
 
   private onUpgrade(request: http.IncomingMessage, socket: net.Socket, head: Buffer) {
-    this.monitor.handleUpgrade(request, socket, head, client => this.monitor.emit('connection', client, request))
+    // this.monitor.handleUpgrade(request, socket, head, client => this.monitor.emit('connection', client, request))
   }
 
   private onConnect(request: http.IncomingMessage, socket: net.Socket, head: Buffer) {
     const [host, port] = request.url.split(':')
-    logger.verbose('connect: %s ', request.url)
     // HackTLS 启用中间人代理
     if (HackTLS) {
-      this.createFakeServer(host).then(({ port }) => this.forward(socket, port, head))
+      this.createFakeServer(host).then(({ port, address }) => this.forward(socket, port, head, address))
     } else {
+      const { url, method, httpVersion } = request
+      logger.info('%s HTTP/%s %s', method, httpVersion, url)
+      socket.on('data', data => {
+        // console.log('.........', data.toString('hex'))
+        const buf = Buffer.from(data)
+        let pos = 0
+        let protocol = {
+          type: parseInt(buf.slice(0, ++pos).toString('hex'), 16),
+          version: ProtocolVersion[parseInt(buf.slice(pos, pos += 2).toString('hex'), 16)],
+          length: parseInt(buf.slice(pos, pos += 2).toString('hex'), 16),
+          name: '',
+          handshake: { }
+        }
+
+        protocol.name = ContentType[protocol.type]
+        logger.info('............ %o', protocol)
+        if (protocol.type == 22) {
+          detectClientHello(protocol, buf.slice(pos))
+        } else if (protocol.type == 20) {
+          protocol.handshake = { }
+        }
+        logger.info('............ %o', protocol)
+      })
       this.forward(socket, +port, head, host)
     }
   }
@@ -73,15 +97,15 @@ export default class MITM extends FakeServer {
     if (+port === this.port && isLocalIP(host)) {
       logger.info('local request')
       response.writeHead(200, { 'Content-Type': 'text/html' })
-      readResource('src/index.html').pipe(response).on('close', () => response.end())
+      readResource('assets/index.html').pipe(response).on('close', () => response.end())
     } else {
       this.localRequest(request, response, false)
     }
   }
 
-  private forward(socket: net.Socket, port: number, head: Buffer, host: string = '127.0.0.1'): void {
-    logger.verbose('connect forward %s %s', port, host)
-    const tmp = net.connect(port, host, () => {
+  private forward(socket: net.Socket, port: number, head: Buffer, host: string): void {
+    // logger.debug('connect forward %s %s', port, host)
+    const tmp = net.connect({ port, host }, () => {
       socket.write('HTTP/1.1 200 Connection Established\r\nProxy-agent: MITM-proxy\r\n\r\n')
       tmp.write(head)
       tmp.pipe(socket)

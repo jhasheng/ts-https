@@ -25,12 +25,11 @@ export abstract class FakeServer extends EventEmitter {
    * @param  {http.ServerResponse} response
    * @param  {boolean} secure
    */
-  localRequest(request: http.IncomingMessage, response: http.ServerResponse, secure?: boolean) {
+  localRequest(request: http.IncomingMessage, response: http.ServerResponse, secure: boolean) {
     const { url, headers, method, httpVersion } = request
     const { host } = headers
     const { path } = URL.parse(url)
-    logger.verbose('%s %s://%s%s', method, secure ? 'https' : 'http', host, path)
-    // server.emit('request', request, response)
+    logger.info('%s HTTP/%s %s://%s%s', method, httpVersion, secure ? 'https' : 'http', host, path)
     // 从 host 中分析出域名和端口
     let [domain, port] = host.split(':')
     if (!port) {
@@ -69,10 +68,10 @@ export abstract class FakeServer extends EventEmitter {
   async createFakeServer(host: string): Promise<net.AddressInfo> {
     return new Promise(async (resolve, reject) => {
       if (lruFSC.has(host)) {
-        logger.verbose('cache fake server hit')
+        logger.verbose('fs cache hit')
         resolve(lruFSC.get(host).address() as net.AddressInfo)
       } else {
-        logger.verbose('cache fake server missing')
+        logger.verbose('fs cache missing')
       }
       const { clientKey, certificate } = await fakeCertificate(host)
       const fake = https.createServer({ key: clientKey, cert: certificate })
@@ -84,15 +83,15 @@ export abstract class FakeServer extends EventEmitter {
         this.localRequest(fakeRequest, fakeResponse, true)
       })
       fake.on('tlsClientError', (err: Error, socket: TLSSocket) => logger.error('tls client error: %j', err))
-      fake.on('error', err => logger.error('fake server error: %j', err))
+      fake.on('error', err => logger.error('fs error: %j', err))
 
       fake.on('close', () => {
-        logger.error('fake server closed ... ')
+        logger.error('fs closed ... ')
         lruFSC.del(host)
       })
 
       fake.on('listening', () => {
-        logger.verbose('fake server start: %j', fake.address())
+        logger.verbose('fs start: %j', fake.address())
         resolve(fake.address() as net.AddressInfo)
       })
     })
