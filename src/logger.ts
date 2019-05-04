@@ -4,7 +4,7 @@ import * as DailyRotateFile from 'winston-daily-rotate-file'
 const { combine, timestamp, label, printf, colorize, uncolorize, splat } = format
 
 const myFormat = printf(({ level, message, label, timestamp }) => {
-  return `${timestamp} [${level}] ${label}: ${message}`
+  return `${timestamp} ${level} [${label}]: ${message}`
 });
 
 export function createLogger(cate: string) {
@@ -21,7 +21,7 @@ export function createLogger(cate: string) {
       new transports.Console(),
       new DailyRotateFile({
         dirname: 'logs',
-        filename: 'order-%DATE%.log',
+        filename: '%DATE%.log',
         datePattern: 'YYYY-MM-DD',
         zippedArchive: true,
         maxSize: '100m',

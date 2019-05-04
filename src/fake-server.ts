@@ -26,32 +26,36 @@ export abstract class FakeServer extends EventEmitter {
    * @param  {boolean} secure
    */
   localRequest(request: http.IncomingMessage, response: http.ServerResponse, secure?: boolean) {
-    logger.silly('local %s request: %j', secure ? 'https' : 'http', request.headers)
-    // server.emit('request', request, response)
     const { url, headers, method, httpVersion } = request
     const { host } = headers
     const { path } = URL.parse(url)
+    logger.verbose('%s %s://%s%s', method, secure ? 'https' : 'http', host, path)
+    // server.emit('request', request, response)
     // 从 host 中分析出域名和端口
     let [domain, port] = host.split(':')
-    if (secure) {
-      port = '443'
-    } else if (!port) {
-      port = '80'
+    if (!port) {
+      port = secure ? '443' : '80'
     }
     // https 与 http 请求的模块不同
-    const handler: FakeHandler = (+port === 443) ? https.request : http.request
+    const semulator: FakeHandler = secure ? https.request : http.request
     // const body = await requestBody(request)
-    const options = { host: domain, headers, method: method.trim(), port, path }
+    const options: http.RequestOptions | https.RequestOptions = { host: domain, headers, method, port, path }
 
-    const remote = handler(options, incoming => {
-      const { statusCode, headers, socket: { remoteAddress, remotePort } } = incoming
+    const remote = semulator(options, localResponse => {
+      const { statusCode, headers, socket: { remoteAddress, remotePort } } = localResponse
       logger.info('remote address %s:%s', remoteAddress, remotePort)
-      // const body = await requestBody(incoming)
-      const base: RequestBase = { code: incoming.statusCode, ssl: secure, ip: remoteAddress, port: remotePort, protocol: httpVersion }
-      this.send({ uuid: uuid(), base, request, response })
+      // const body = await requestBody(localResponse)
+      // const base: RequestBase = {
+      //   code: localResponse.statusCode,
+      //   ssl: secure,
+      //   ip: remoteAddress,
+      //   port: remotePort,
+      //   protocol: httpVersion
+      // }
+      // this.send({ uuid: uuid(), base, request, response })
       // logger.verbose('response body %s', body)
       response.writeHead(statusCode, headers)
-      incoming.pipe(response)
+      localResponse.pipe(response)
     })
 
     remote.on('error', err => logger.error('local request error: %j', err))

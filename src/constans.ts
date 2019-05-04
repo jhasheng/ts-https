@@ -24,3 +24,12 @@ export type RequestBase = { code: number, ssl: boolean, ip: string, port: number
 export type Monitor = { uuid: string, base: RequestBase, request: http.IncomingMessage, response: http.ServerResponse }
 
 export const documentRoot = path.resolve('.')
+
+export interface ServerOptions {
+  request: http.IncomingMessage;
+  response: http.ServerResponse;
+}
+
+type RequestListener = (req: http.IncomingMessage, res: http.ServerResponse) => void;
+
+export type Li = ServerOptions & { secure: boolean }
