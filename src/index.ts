@@ -6,7 +6,7 @@ import { HackTLS, Monitor } from './constans'
 import { FakeServer } from './fake-server'
 import { isLocalIP, readResource } from './utils'
 import { ContentType, ProtocolVersion, HandshakeType } from './handshake/constans'
-import { detect as detectClientHello } from './handshake/client-hello'
+import { detect } from './handshake/detect';
 
 const logger = createLogger('index')
 
@@ -71,22 +71,24 @@ export default class MITM extends FakeServer {
         // console.log('.........', data.toString('hex'))
         const buf = Buffer.from(data)
         let pos = 0
-        let protocol = {
+        let record = {
           type: parseInt(buf.slice(0, ++pos).toString('hex'), 16),
           version: ProtocolVersion[parseInt(buf.slice(pos, pos += 2).toString('hex'), 16)],
           length: parseInt(buf.slice(pos, pos += 2).toString('hex'), 16),
           name: '',
-          handshake: { }
+          handshake: {}
         }
-
-        protocol.name = ContentType[protocol.type]
-        logger.info('............ %o', protocol)
-        if (protocol.type == 22) {
-          detectClientHello(protocol, buf.slice(pos))
-        } else if (protocol.type == 20) {
-          protocol.handshake = { }
+        record.name = ContentType[record.type]
+        const type = buf.slice(pos, ++pos).toString('hex')
+        // logger.info('............ %o', record)
+        if (record.type == 22) {
+          if (+type === 1) {
+            // detectClientHello(record, buf.slice(pos))
+          }
+          // logger.info('------------%s %o', buf.toString('hex'), record)
+        } else if (record.type == 20) {
+          record.handshake = {}
         }
-        logger.info('............ %o', protocol)
       })
       this.forward(socket, +port, head, host)
     }
@@ -111,8 +113,51 @@ export default class MITM extends FakeServer {
       tmp.pipe(socket)
       socket.pipe(tmp)
     })
+
+    let i = 0
     // tmp.setTimeout(0)
     tmp.on('error', err => logger.error('tmp error:', err))
+    tmp.on('data', data => {
+      const buf = Buffer.from(data)
+      let pos = 0
+      let record_type = parseInt(buf.slice(pos, ++pos).toString('hex'), 16)
+      let record_version = buf.slice(pos, pos += 2).toString('hex')
+      let record_length = parseInt(buf.slice(pos, pos += 2).toString('hex'), 16)
+
+      let sub = 0
+      while (pos < buf.length) {
+        const hex = buf.slice(pos, pos += record_length)
+        if (record_type !== 23) {
+          detect(hex)
+          logger.info('--------------- %o', [`${i}-${sub}`, record_type, pos, record_length])
+        }
+        record_type = parseInt(buf.slice(pos, ++pos).toString('hex'), 16)
+        record_version = buf.slice(pos, pos += 2).toString('hex')
+        record_length = parseInt(buf.slice(pos, pos += 2).toString('hex'), 16)
+        sub++
+      }
+      i++
+
+      // let record = {
+      //   type: parseInt(buf.slice(0, ++pos).toString('hex'), 16),
+      //   version: ProtocolVersion[parseInt(buf.slice(pos, pos += 2).toString('hex'), 16)],
+      //   length: parseInt(buf.slice(pos, pos += 2).toString('hex'), 16),
+      //   name: '',
+      //   handshake: {}
+      // }
+
+      // record.name = ContentType[record.type]
+      // if (record.type == 22) {
+      //   const type = buf.slice(pos, ++pos).toString('hex')
+      //   if (+type === 2) {
+      //     pos += detectServerHello(record, buf.slice(pos))
+      //     logger.info('^^^^^^^^^^^^^%s %s', [pos, buf.length].join('/'), buf.slice(pos).toString('hex'))
+      //     // if (pos < buf.length) {
+      //     //   logger.info('^^^^^^^^^^^^^%s', buf.slice(pos).toString('hex'))
+      //     // }
+      //   }
+      // }
+    })
     socket.on('error', err => logger.error('socket error: %j', err))
   }
 }

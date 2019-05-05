@@ -15,7 +15,7 @@ export function detectExtension(buffer: Buffer) {
     } else {
       extension['name'] = Extension[index]
     }
-    extension['content'] = buffer.slice(pos, pos += parseInt(extension.length, 16))
+    extension['content'] = buffer.slice(pos, pos += parseInt(extension.length, 16)).toString('hex')
     extensions.push(extension)
   }
   return extensions
